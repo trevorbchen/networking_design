@@ -97,6 +97,30 @@
     return out;
   }
   OBS.niceTicks = niceTicks;
+  /** format a tick value with decimals derived from the tick step; trims trailing zeros */
+  function tickNum(v, stepv) {
+    if (Math.abs(v) < 1e-12) return '0';
+    if (Math.abs(v) >= 1e4) return fmt.num(v);
+    const d = Math.max(0, Math.min(4, -Math.floor(Math.log10(stepv || 1))));
+    return String(+v.toFixed(d));
+  }
+  OBS.tickNum = tickNum;
+  /** axis scaling: returns {scale, suffix} so ticks land on round numbers in display units */
+  function axisUnit(unit, hi) {
+    if (unit === 'B' || unit === 'B/s') { const u = ['B', 'KiB', 'MiB', 'GiB', 'TiB']; let k = 0; while (hi / Math.pow(1024, k) >= 1024 && k < 4) k++; return { scale: Math.pow(1024, k), suffix: ' ' + u[k] + (unit === 'B/s' ? '/s' : '') }; }
+    if (unit === 'ms') return hi >= 2000 ? { scale: 1000, suffix: ' s' } : { scale: 1, suffix: ' ms' };
+    if (unit === '%') return { scale: 1, suffix: '%' };
+    return { scale: 1, suffix: '' };
+  }
+  /** small legend explaining event-marker colors */
+  OBS.eventLegend = function (events) {
+    const kinds = Array.from(new Set(events.map((e) => e.kind)));
+    if (!kinds.length) return null;
+    return OBS.el('span', { class: 'evt-legend', title: 'Dashed vertical lines on charts are events. Hover near one for details.' }, 'events:', kinds.map((k) => OBS.el('span', {}, OBS.el('i', { style: { borderTopColor: OBS.EVENT_COLORS[k] || '#94a3b8' } }), k)));
+  };
+  OBS.toast = OBS.toast || function (msg) { let t = document.querySelector('.toast'); if (!t) { t = OBS.el('div', { class: 'toast' }); document.body.append(t); } t.textContent = msg; t.style.display = 'block'; clearTimeout(OBS.toast.h); OBS.toast.h = setTimeout(() => (t.style.display = 'none'), 1800); };
+  const PIN_SVG = '<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 3h6l-1 6 4 4H6l4-4z"/></svg>';
+  OBS.PIN_SVG = PIN_SVG;
   function timeTicks(t0, t1, px) {
     const target = Math.max(2, Math.floor(px / 90));
     const cands = [5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600];
@@ -105,6 +129,18 @@
     for (let v = Math.ceil(t0 / stepv) * stepv; v <= t1; v += stepv) out.push(v);
     return out;
   }
+
+  /** shared scenario card for the landing pages */
+  OBS.scenarioCard = function (s, progress, href) {
+    const tut = /tutorial/.test(s.id);
+    return OBS.el('a', { class: 'card' + (tut ? ' featured' : ''), href },
+      tut ? OBS.el('div', { class: 'pill', style: { color: 'var(--accent)', borderColor: 'var(--accent)', marginBottom: '6px' } }, 'start here') : '',
+      OBS.el('h3', {}, s.title),
+      OBS.el('div', { class: 'row', style: { marginBottom: '4px' } }, OBS.el('span', { class: 'pill ' + (s.difficulty || '') }, s.difficulty || '?'), OBS.el('span', { class: 'dim mono' }, s.id), progress ? OBS.el('span', { class: 'pill' }, 'in progress') : ''),
+      OBS.el('div', { class: 'alert-line' }, '● ' + ((s.brief && s.brief.alert) || '')),
+      OBS.el('p', { class: 'dim' }, (s.tags || []).join(' · ')),
+      OBS.el('span', { class: 'go' }, progress ? 'Resume →' : 'Start →'));
+  };
 
   // ------------------------------------------------------- LineChart ------
   /**
@@ -127,12 +163,14 @@
       head.append(OBS.el('div', { class: 'chart-title', title: cfg.keys.join('\n') }, cfg.title || cfg.keys.join(', ')));
       if (unit) head.append(OBS.el('span', { class: 'chart-unit' }, unit));
       const tools = OBS.el('div', { class: 'chart-tools' });
-      this.thInput = OBS.el('input', { class: 'th-input', type: 'number', step: 'any', placeholder: 'threshold', title: 'Draw a threshold line. Regions above it are shaded and the first crossing is reported.', value: cfg.threshold != null ? cfg.threshold : '' });
+      this.thInput = OBS.el('input', { class: 'th-input', type: 'number', step: 'any', placeholder: 'threshold', title: 'Type a value to draw a threshold line. Time at/above it is shaded and the first crossing is reported.', value: cfg.threshold != null ? cfg.threshold : '' });
       this.thInput.addEventListener('input', () => { const v = parseFloat(this.thInput.value); this.cfg.threshold = isFinite(v) ? v : null; this.render(); this.ctx.onChange && this.ctx.onChange(); });
+      if (cfg.threshold != null) this.root.classList.add('has-th');
       tools.append(this.thInput);
-      tools.append(OBS.el('button', { class: 'btn-icon', title: 'Toggle log scale', onclick: () => { cfg.logY = !cfg.logY; this.render(); } }, 'log'));
-      tools.append(OBS.el('button', { class: 'btn-icon', title: 'Pin the value under the cursor as evidence in your report', onclick: () => this.pinCursor() }, '📌'));
-      if (cfg.onCorrelate) tools.append(OBS.el('button', { class: 'btn-icon', title: 'Rank all other metrics by correlation with this one in the current time window', onclick: () => cfg.onCorrelate(this) }, '≈'));
+      const logBtn = OBS.el('button', { class: 'btn-icon' + (cfg.logY ? ' on' : ''), title: 'Toggle logarithmic y-axis', onclick: () => { cfg.logY = !cfg.logY; logBtn.classList.toggle('on', !!cfg.logY); this.render(); this.ctx.onChange && this.ctx.onChange(); } }, 'log');
+      tools.append(logBtn);
+      tools.append(OBS.el('button', { class: 'btn-icon', title: 'Pin the value under the cursor as evidence in your report (shortcut: p while hovering)', onclick: () => this.pinCursor(), html: PIN_SVG + ' pin' }));
+      if (cfg.onCorrelate) tools.append(OBS.el('button', { class: 'btn-icon', title: 'Find metrics that moved together with this one in the current time window', onclick: () => cfg.onCorrelate(this) }, 'corr'));
       if (cfg.onRemove) tools.append(OBS.el('button', { class: 'btn-icon', title: 'Remove chart', onclick: () => cfg.onRemove(this) }, '✕'));
       head.append(tools);
       this.root.append(head);
@@ -171,8 +209,11 @@
         ticks = []; for (let v = ylo; v <= yhi * 1.0001; v *= 10) ticks.push(v);
       } else {
         ylo = lo >= 0 ? 0 : lo; yhi = hi + (hi - ylo) * 0.08 || 1;
-        ticks = niceTicks(ylo, yhi, 4); yhi = Math.max(yhi, ticks[ticks.length - 1]);
+        const au0 = axisUnit(this.unit, yhi);
+        ticks = niceTicks(ylo / au0.scale, yhi / au0.scale, 4).map((v) => v * au0.scale); yhi = Math.max(yhi, ticks[ticks.length - 1]);
       }
+      const au = axisUnit(this.unit, yhi);
+      const tstep = ticks.length > 1 ? Math.abs(ticks[1] - ticks[0]) / au.scale : 1;
       const X = (t) => M.l + ((t - t0) / (t1 - t0 || 1)) * iw;
       const Y = logY ? (v) => M.t + ih - ((Math.log10(Math.max(v, ylo)) - Math.log10(ylo)) / (Math.log10(yhi) - Math.log10(ylo))) * ih
                      : (v) => M.t + ih - ((v - ylo) / (yhi - ylo || 1)) * ih;
@@ -183,12 +224,12 @@
       for (const v of ticks) {
         const y = Y(v);
         s.append(svg('line', { x1: M.l, x2: W - M.r, y1: y, y2: y, class: 'grid' }));
-        const tx = svg('text', { x: M.l - 6, y: y + 3.5, class: 'tick', 'text-anchor': 'end' }); tx.textContent = OBS.fmt.val(v, this.unit === '%' ? '' : this.unit).replace(/ (req\/s|conn|ops\/s|msgs|msg\/s)$/, ''); s.append(tx);
+        const tx = svg('text', { x: M.l - 6, y: y + 3.5, class: 'tick', 'text-anchor': 'end' }); tx.textContent = logY ? fmt.num(v) : (Math.abs(v) < 1e-12 ? '0' : tickNum(v / au.scale, tstep) + au.suffix); s.append(tx);
       }
       for (const v of timeTicks(t0, t1, iw)) {
         const x = X(v);
         s.append(svg('line', { x1: x, x2: x, y1: M.t, y2: M.t + ih, class: 'grid grid-v' }));
-        const tx = svg('text', { x, y: H - 5, class: 'tick', 'text-anchor': 'middle' }); tx.textContent = OBS.fmt.clock(c.start, v).slice(0, 5 + (t1 - t0 < 600 ? 3 : 0)); s.append(tx);
+        const tx = svg('text', { x, y: H - 5, class: 'tick', 'text-anchor': x > W - M.r - 20 ? 'end' : x < M.l + 20 ? 'start' : 'middle' }); tx.textContent = OBS.fmt.clock(c.start, v).slice(0, 5 + (t1 - t0 < 600 ? 3 : 0)); s.append(tx);
       }
       // threshold shading
       this.info.textContent = '';
@@ -196,7 +237,7 @@
         const th = cfg.threshold, yth = Y(th);
         let first = null, above = 0, total = 0, runStart = null;
         for (let i = i0; i <= i1; i++) {
-          const any = keys.some((k) => c.series[k][i] > th);
+          const any = keys.some((k) => c.series[k][i] >= th - Math.abs(th) * 1e-9);
           total++; if (any) { above++; if (first == null) first = c.times[i]; }
           if (any && runStart == null) runStart = c.times[i];
           if ((!any || i === i1) && runStart != null) {
@@ -206,8 +247,8 @@
           }
         }
         s.append(svg('line', { x1: M.l, x2: W - M.r, y1: yth, y2: yth, class: 'th-line' }));
-        this.info.textContent = first == null ? 'never above ' + OBS.fmt.val(th, this.unit) + ' in window'
-          : 'first above ' + OBS.fmt.val(th, this.unit) + ' at ' + OBS.fmt.clock(c.start, first) + ' · above for ' + Math.round((100 * above) / total) + '% of window (' + OBS.fmt.dur(above * c.step) + ')';
+        this.info.textContent = first == null ? 'never at/above ' + OBS.fmt.val(th, this.unit) + ' in window'
+          : 'at/above ' + OBS.fmt.val(th, this.unit) + ' first at ' + OBS.fmt.clock(c.start, first) + ' · above for ' + Math.round((100 * above) / total) + '% of window (' + OBS.fmt.dur(above * c.step) + ')';
       }
       // events
       for (const e of c.events) {
@@ -231,6 +272,7 @@
       s.append(this.cursorLine);
       this.brush = svg('rect', { y: M.t, height: ih, class: 'brush', visibility: 'hidden' });
       s.append(this.brush);
+      const hintT = svg('text', { x: W - M.r - 4, y: M.t + 11, class: 'plot-hint', 'text-anchor': 'end' }); hintT.textContent = 'drag: zoom · p: pin · double-click: reset'; s.append(hintT);
       const hit = svg('rect', { x: M.l, y: M.t, width: iw, height: ih, fill: 'transparent', style: 'cursor:crosshair' });
       s.append(hit);
       this.bindMouse(hit);
@@ -277,9 +319,12 @@
       this.updateLegendValues(vals);
       if (this.hovering) {
         const rows = vals.filter((v) => !v.hidden).sort((a, b) => b.v - a.v).slice(0, 8);
-        this.tip.innerHTML = '<div class="tip-time">' + OBS.fmt.clock(this.ctx.c.start, t) + '</div>' + rows.map((r) => `<div><i style="background:${r.color}"></i>${r.label}<b>${OBS.fmt.val(r.v, this.unit)}</b></div>`).join('');
+        const near = this.ctx.c.events.filter((e) => e.t >= this.geom.t0 && e.t <= this.geom.t1 && Math.abs(this.geom.X(e.t) - x) <= 6);
+        const esc = (s) => String(s).replace(/[&<>]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+        const evHtml = near.map((e) => `<div class="tip-evt" style="color:${OBS.EVENT_COLORS[e.kind] || '#94a3b8'}">▼ ${OBS.fmt.clock(this.ctx.c.start, e.t)} ${e.kind}${e.entity ? ' · ' + esc(e.entity) : ''}</div><div class="tip-evt-msg">${esc(e.msg)}</div>`).join('');
+        this.tip.innerHTML = evHtml + '<div class="tip-time">' + OBS.fmt.clock(this.ctx.c.start, t) + '</div>' + rows.map((r) => `<div><i style="background:${r.color}"></i>${r.label}<b>${OBS.fmt.val(r.v, this.unit)}</b></div>`).join('');
         this.tip.style.display = 'block';
-        const left = x + 14 + 220 > this.geom.W ? x - 14 - 220 : x + 14;
+        const left = x + 14 + 270 > this.geom.W ? x - 14 - 270 : x + 14;
         this.tip.style.left = left + 'px';
       } else this.tip.style.display = 'none';
     }
@@ -288,7 +333,7 @@
       this.legendItems = {};
       this.cfg.keys.forEach((k, i) => {
         if (!this.ctx.c.series[k]) { this.legend.append(OBS.el('span', { class: 'lg missing' }, '⚠ ' + k)); return; }
-        const val = OBS.el('b', {}, '');
+        const val = OBS.el('b', {}, '–');
         const item = OBS.el('span', { class: 'lg' + (this.hidden.has(k) ? ' off' : ''), title: (this.ctx.c.meta[k].desc || k) + '\n(click to hide/show, alt-click to solo)', onclick: (ev) => {
           if (ev.altKey) { const solo = this.hidden.size === this.cfg.keys.length - 1 && !this.hidden.has(k); this.hidden = new Set(solo ? [] : this.cfg.keys.filter((x) => x !== k)); }
           else if (this.hidden.has(k)) this.hidden.delete(k); else this.hidden.add(k);
@@ -299,12 +344,12 @@
     }
     updateLegendValues(vals) {
       if (!this.legendItems) return;
-      for (const k in this.legendItems) this.legendItems[k].textContent = '';
+      for (const k in this.legendItems) this.legendItems[k].textContent = '–';
       if (vals) for (const v of vals) if (this.legendItems[v.key]) this.legendItems[v.key].textContent = OBS.fmt.val(v.v, this.unit);
     }
     pinCursor() {
       const t = this.lastCursor != null ? this.lastCursor : this.ctx.cursor();
-      if (t == null) { alert('Hover over the chart first, then press 📌 (or press "p" while hovering).'); return; }
+      if (t == null) { OBS.toast('Hover over the chart first, then press p (or the pin button).'); return; }
       const vals = this.valuesAt(t).filter((v) => !v.hidden);
       this.ctx.pin({ t, chart: this.cfg.title || this.cfg.keys.join(', '), values: vals.map((v) => ({ label: v.label, v: OBS.fmt.val(v.v, this.unit) })) });
     }
@@ -327,7 +372,7 @@
     const iw = W - labelW - 4, cols = i1 - i0 + 1, cw = iw / cols;
     const color = (f) => { // dark blue -> teal -> yellow -> red
       f = Math.max(0, Math.min(1, f));
-      const stops = [[13, 27, 52], [20, 110, 140], [60, 190, 120], [245, 200, 50], [242, 80, 90]];
+      const stops = [[68, 1, 84], [59, 82, 139], [33, 145, 140], [94, 201, 98], [253, 231, 37]];
       const x = f * (stops.length - 1), a = Math.floor(x), b = Math.min(stops.length - 1, a + 1), u = x - a;
       return 'rgb(' + stops[a].map((v, j) => Math.round(v + (stops[b][j] - v) * u)).join(',') + ')';
     };
@@ -342,7 +387,7 @@
       g.fillStyle = '#c9d4e3'; g.fillText(r.label.length > 24 ? '…' + r.label.slice(-23) : r.label, 4, ri * rowH + rowH / 2);
     });
     g.fillStyle = '#8a97ab';
-    for (const v of timeTicks(t0, t1, iw)) { const x = labelW + ((v - t0) / (t1 - t0)) * iw; g.fillText(OBS.fmt.clock(c.start, v).slice(0, 5), x - 14, rows.length * rowH + 12); }
+    for (const v of timeTicks(t0, t1, iw)) { const x = labelW + ((v - t0) / (t1 - t0)) * iw; g.fillText(OBS.fmt.clock(c.start, v).slice(0, 5), Math.min(x - 14, W - 34), rows.length * rowH + 12); }
     for (const e of c.events) { if (e.t < t0 || e.t > t1) continue; const x = labelW + ((e.t - t0) / (t1 - t0)) * iw; g.fillStyle = OBS.EVENT_COLORS[e.kind] || '#999'; g.fillRect(x, 0, 1.5, rows.length * rowH); }
     host.append(cv);
     const tip = OBS.el('div', { class: 'chart-tip' }); host.style.position = 'relative'; host.append(tip);
@@ -355,6 +400,8 @@
       tip.innerHTML = `<div class="tip-time">${OBS.fmt.clock(c.start, c.times[ci])}</div><div>${rows[ri].label}<b>${OBS.fmt.val(rows[ri].values[ci], unit)}</b></div>`;
     });
     cv.addEventListener('mouseleave', () => { tip.style.display = 'none'; ctx.setCursor(null); });
+    const grad = OBS.el('div', { class: 'heat-legend' }, OBS.el('span', {}, opts.rowNormalize ? 'row min' : OBS.fmt.val(lo, unit)), OBS.el('i', { style: { background: 'linear-gradient(90deg,' + [0, 0.25, 0.5, 0.75, 1].map((f) => color(f)).join(',') + ')' } }), OBS.el('span', {}, opts.rowNormalize ? 'row max' : OBS.fmt.val(hi, unit)));
+    host.append(grad);
     return { lo, hi };
   };
 
@@ -370,8 +417,8 @@
     if (ymax == null) ymax = Math.max(...series.flatMap((s) => s.points.map((p) => p[1]))) * 1.08 || 1;
     const X = (x) => M.l + ((x - xmin) / (xmax - xmin || 1)) * iw, Y = (y) => M.t + ih - ((Math.min(y, ymax) - ymin) / (ymax - ymin || 1)) * ih;
     const s = svg('svg', { width: W, height: H, class: 'chart-svg' });
-    for (const v of niceTicks(ymin, ymax, 5)) { s.append(svg('line', { x1: M.l, x2: W - M.r, y1: Y(v), y2: Y(v), class: 'grid' })); const t = svg('text', { x: M.l - 6, y: Y(v) + 4, class: 'tick', 'text-anchor': 'end' }); t.textContent = opts.yFmt ? opts.yFmt(v) : fmt.num(v); s.append(t); }
-    for (const v of niceTicks(xmin, xmax, 6)) { s.append(svg('line', { x1: X(v), x2: X(v), y1: M.t, y2: M.t + ih, class: 'grid grid-v' })); const t = svg('text', { x: X(v), y: H - 22, class: 'tick', 'text-anchor': 'middle' }); t.textContent = opts.xFmt ? opts.xFmt(v) : fmt.num(v); s.append(t); }
+    for (const v of niceTicks(ymin, ymax, 5)) { s.append(svg('line', { x1: M.l, x2: W - M.r, y1: Y(v), y2: Y(v), class: 'grid' })); const t = svg('text', { x: M.l - 6, y: Y(v) + 4, class: 'tick', 'text-anchor': 'end' }); t.textContent = opts.yFmt ? opts.yFmt(v) : tickNum(v, niceTicks(ymin, ymax, 5)[1] - niceTicks(ymin, ymax, 5)[0]); s.append(t); }
+    for (const v of niceTicks(xmin, xmax, 6)) { s.append(svg('line', { x1: X(v), x2: X(v), y1: M.t, y2: M.t + ih, class: 'grid grid-v' })); const t = svg('text', { x: X(v), y: H - 22, class: 'tick', 'text-anchor': 'middle' }); t.textContent = opts.xFmt ? opts.xFmt(v) : tickNum(v, niceTicks(xmin, xmax, 6)[1] - niceTicks(xmin, xmax, 6)[0]); s.append(t); }
     if (opts.xLabel) { const t = svg('text', { x: M.l + iw / 2, y: H - 4, class: 'axis-label', 'text-anchor': 'middle' }); t.textContent = opts.xLabel; s.append(t); }
     if (opts.yLabel) { const t = svg('text', { x: 12, y: M.t + ih / 2, class: 'axis-label', 'text-anchor': 'middle', transform: `rotate(-90 12 ${M.t + ih / 2})` }); t.textContent = opts.yLabel; s.append(t); }
     for (const b of opts.bands || []) s.append(svg('rect', { x: X(b.x0), y: M.t, width: X(b.x1) - X(b.x0), height: ih, fill: b.color, opacity: b.opacity || 0.12 }));

@@ -8,12 +8,13 @@
   const LAB = [];
   const add = (id, title, render) => LAB.push({ id, title, render });
 
-  function slider(label, min, max, step, value, onInput, format) {
+  function slider(label, min, max, step, value, onInput, format, lazy) {
     const out = el('output', {}, format ? format(value) : value);
     const inp = el('input', { type: 'range', min, max, step, value });
-    inp.addEventListener('input', () => { out.textContent = format ? format(+inp.value) : inp.value; onInput(+inp.value); });
+    inp.addEventListener('input', () => { out.textContent = format ? format(+inp.value) : inp.value; if (!lazy) onInput(+inp.value); });
+    if (lazy) inp.addEventListener('change', () => onInput(+inp.value));
     const row = el('div', { class: 'ctrl' }, el('label', {}, label), inp, out);
-    row.input = inp; return row;
+    row.input = inp; row.set = (v) => { inp.value = v; out.textContent = format ? format(v) : v; }; return row;
   }
   const stat = (k, v) => el('div', { class: 'stat' }, el('div', { class: 'k' }, k), el('div', { class: 'v' }, v));
   const seeded = (seed) => { let a = seed; return () => { a |= 0; a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
@@ -33,8 +34,11 @@
     const pw = erlangC(c, a); const rate = c * mu - lambda; // per second
     const wq = pw / rate * 1000;
     // P(Wq > t) = pw * exp(-rate t) → t99 for waiting; approximate total p99 = S*ln(100)?? use waiting tail + service median
-    const tw = pw > 0.01 ? Math.log(pw / 0.01) / rate * 1000 : 0;
-    return { rho, mean: wq + S, p99: tw + S * Math.log(100) * (pw > 0.01 ? 0.5 : 1), pw, wq };
+    // sojourn T = S (prob 1-pw) or Wq+S (prob pw); Wq~Exp(rate), S~Exp(mu): solve P(T>t)=0.01
+    const tail = (t) => { const a = Math.exp(-mu * t); const b = Math.abs(rate - mu) < 1e-9 ? (1 + mu * t) * a : (mu * Math.exp(-rate * t) - rate * a) / (mu - rate); return (1 - pw) * a + pw * b; };
+    let lo = 0, hi = 1; while (tail(hi) > 0.01) hi *= 2;
+    for (let k = 0; k < 60; k++) { const m = (lo + hi) / 2; if (tail(m) > 0.01) lo = m; else hi = m; }
+    return { rho, mean: wq + S, p99: hi * 1000, pw, wq };
   }
   add('queueing', 'Queueing & the utilization knee', (host) => {
     host.append(el('h2', {}, 'Queueing: why latency explodes near 100% utilization'),
@@ -54,7 +58,7 @@
       for (let u = 0.02; u < 0.995; u += 0.005) { const m = mmc(u * st.c * 1000 / st.S, st.S, st.c); pts.push([u * 100, m.mean]); pts99.push([u * 100, m.p99]); }
       const ymax = Math.max(st.S * 12, isFinite(r.p99) ? r.p99 * 1.2 : 0);
       OBS.svgPlot(plot, [{ label: 'mean latency', points: pts, color: '#4e9cff' }, { label: '≈ p99 latency', points: pts99, color: '#f2617a' }],
-        { xLabel: 'utilization %', yLabel: 'latency (ms)', xMax: 100, yMax: Math.min(ymax, st.S * 60), markers: isFinite(r.mean) ? [[r.rho * 100, Math.min(r.p99, st.S * 60)], [r.rho * 100, r.mean, '#4e9cff']] : [], bands: [{ x0: 80, x1: 100, color: '#f2617a', opacity: 0.08 }], height: 300 });
+        { xLabel: 'utilization', xFmt: (v) => v + '%', yLabel: 'latency (ms)', xMax: 100, yMax: Math.min(ymax, st.S * 60), markers: isFinite(r.mean) ? [[r.rho * 100, Math.min(r.p99, st.S * 60)], [r.rho * 100, r.mean, '#4e9cff']] : [], bands: [{ x0: 80, x1: 100, color: '#f2617a', opacity: 0.08 }], height: 300 });
     }
     draw();
   });
@@ -72,7 +76,7 @@
       const ph = p * 0.05; // hedge after p95: request slow only if both primary slow and hedge slow-ish
       stats.innerHTML = ''; stats.append(stat('P(request slow)', f(st.N, p).toFixed(1) + '%'), stat('with hedging', f(st.N, ph).toFixed(2) + '%'), stat('one always-slow node', '100%'));
       const a = [], b = []; for (let n = 1; n <= 200; n++) { a.push([n, f(n, p)]); b.push([n, f(n, ph)]); }
-      OBS.svgPlot(plot, [{ label: 'no hedging', points: a }, { label: 'hedged at p95', points: b, color: '#3fcf8e' }], { xLabel: 'fan-out N', yLabel: '% of requests slow', yMax: 100, markers: [[st.N, f(st.N, p)]], height: 280 });
+      OBS.svgPlot(plot, [{ label: 'no hedging', points: a }, { label: 'hedged at p95', points: b, color: '#3fcf8e' }], { xLabel: 'fan-out N', yLabel: 'requests slow', yFmt: (v) => v + '%', yMax: 100, markers: [[st.N, f(st.N, p)]], height: 280 });
     }
     draw();
   });
@@ -134,7 +138,7 @@
       el('button', { onclick: () => { st.reps.forEach((r) => (r.v = st.latest)); st.log.unshift('anti-entropy / read-repair: all up replicas synced'); draw(); } }, 'Anti-entropy repair'),
       el('button', { onclick: () => { reset(); draw(); } }, 'Reset')), info, view);
     function draw() {
-      sW.input.max = st.N; sR.input.max = st.N;
+      sW.input.max = st.N; sR.input.max = st.N; sW.set(st.W); sR.set(st.R);
       info.innerHTML = '';
       const strong = st.R + st.W > st.N;
       info.append(stat('R + W', st.R + st.W + (strong ? ' > ' : ' ≤ ') + 'N=' + st.N), stat('read overlap', strong ? 'guaranteed' : 'NOT guaranteed'), stat('writes tolerate', Math.max(0, st.N - st.W) + ' down'), stat('reads tolerate', Math.max(0, st.N - st.R) + ' down'));
@@ -206,17 +210,32 @@
       el('p', {}, 'Real access patterns are skewed (Zipf): a few keys get most traffic. A cache holding 1% of keys can serve most reads, and every extra % of hit ratio is load the database doesn\'t see. Going from 95% → 99% hit cuts DB load 5×. That is also why a cold or flushed cache (deploys, restarts, synchronized TTLs) can take a database down.'));
     const st = { s: 1.0, keys: 10000 };
     const plot = el('div', { class: 'panel' }), stats = el('div', { class: 'stat-row' });
-    host.append(slider('Zipf skew s', 0.5, 1.5, 0.05, st.s, (v) => { st.s = v; draw(); }, (v) => v.toFixed(2)), stats, plot,
-      el('p', { class: 'muted' }, 'LRU evicts least-recently-used; LFU evicts least-frequently-used. Each point is a 40k-request simulation. "DB load" assumes misses go to the DB.'));
+    host.append(slider('Zipf skew s', 0.5, 1.5, 0.05, st.s, (v) => { st.s = v; draw(); }, (v) => v.toFixed(2), true), stats, plot,
+      el('p', { class: 'muted' }, 'LRU evicts least-recently-used; LFU evicts least-frequently-used. Each point is a 20k-request simulation (recomputed when you release the slider). "DB load" assumes misses go to the DB.'));
+    const memo = new Map();
     function zipfSampler(n, s, rnd) { const w = []; let tot = 0; for (let i = 1; i <= n; i++) { tot += 1 / Math.pow(i, s); w.push(tot); } return () => { const x = rnd() * tot; let lo = 0, hi = n - 1; while (lo < hi) { const m = (lo + hi) >> 1; if (w[m] < x) lo = m + 1; else hi = m; } return lo; }; }
     function simLRU(reqs, size) { const m = new Map(); let hit = 0; for (const k of reqs) { if (m.has(k)) { hit++; m.delete(k); m.set(k, 1); } else { m.set(k, 1); if (m.size > size) m.delete(m.keys().next().value); } } return hit / reqs.length; }
-    function simLFU(reqs, size) { const cnt = new Map(), cache = new Set(); let hit = 0; for (const k of reqs) { cnt.set(k, (cnt.get(k) || 0) + 1); if (cache.has(k)) { hit++; continue; } if (cache.size < size) { cache.add(k); continue; } let worst = null, wc = Infinity; if (cache.size) for (const c of cache) { const v = cnt.get(c); if (v < wc) { wc = v; worst = c; } if (wc <= 1) break; } if (cnt.get(k) > wc) { cache.delete(worst); cache.add(k); } } return hit / reqs.length; }
+    // O(1) LFU: frequency buckets (freq -> insertion-ordered Set) + min frequency
+    function simLFU(reqs, size) {
+      const freq = new Map(), buckets = new Map(); let minF = 0, hit = 0;
+      const touch = (k) => { const f = freq.get(k); buckets.get(f).delete(k); if (!buckets.get(f).size) { buckets.delete(f); if (minF === f) minF = f + 1; } freq.set(k, f + 1); if (!buckets.has(f + 1)) buckets.set(f + 1, new Set()); buckets.get(f + 1).add(k); };
+      for (const k of reqs) {
+        if (freq.has(k)) { hit++; touch(k); continue; }
+        if (freq.size >= size) { const b = buckets.get(minF); const victim = b.values().next().value; b.delete(victim); if (!b.size) buckets.delete(minF); freq.delete(victim); }
+        freq.set(k, 1); if (!buckets.has(1)) buckets.set(1, new Set()); buckets.get(1).add(k); minF = 1;
+      }
+      return hit / reqs.length;
+    }
     function draw() {
-      const rnd = seeded(11); const z = zipfSampler(st.keys, st.s, rnd); const reqs = Array.from({ length: 40000 }, z);
-      const sizes = [10, 25, 50, 100, 200, 400, 800, 1600, 3200];
-      const lru = sizes.map((sz) => [100 * sz / st.keys, 100 * simLRU(reqs, sz)]), lfu = sizes.map((sz) => [100 * sz / st.keys, 100 * simLFU(reqs, sz)]);
+      const key = st.s.toFixed(2);
+      if (!memo.has(key)) {
+        const rnd = seeded(11); const z = zipfSampler(st.keys, st.s, rnd); const reqs = Array.from({ length: 20000 }, z);
+        const sizes = [10, 25, 50, 100, 200, 400, 800, 1600, 3200];
+        memo.set(key, { lru: sizes.map((sz) => [100 * sz / st.keys, 100 * simLRU(reqs, sz)]), lfu: sizes.map((sz) => [100 * sz / st.keys, 100 * simLFU(reqs, sz)]) });
+      }
+      const { lru, lfu } = memo.get(key);
       stats.innerHTML = ''; stats.append(stat('LRU @1% size', lru[3][1].toFixed(1) + '%'), stat('DB load vs no cache', (100 - lru[3][1]).toFixed(1) + '%'), stat('LRU @8% size', lru[6][1].toFixed(1) + '%'));
-      OBS.svgPlot(plot, [{ label: 'LRU', points: lru }, { label: 'LFU', points: lfu, color: '#3fcf8e', dash: '5 4' }], { xLabel: 'cache size (% of keyspace)', yLabel: 'hit ratio %', yMax: 100, height: 280 });
+      OBS.svgPlot(plot, [{ label: 'LRU', points: lru }, { label: 'LFU', points: lfu, color: '#3fcf8e', dash: '5 4' }], { xLabel: 'cache size (% of keyspace)', yLabel: 'hit ratio', yMax: 100, height: 280, yFmt: (v) => v + '%', xFmt: (v) => v + '%' });
     }
     draw();
   });

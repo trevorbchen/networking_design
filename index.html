@@ -8,13 +8,13 @@
 </head>
 <body>
 <div class="page">
-  <h1 style="font-size:28px"><span style="color:#fff">Obs</span><span style="color:var(--accent)">ervatory</span></h1>
+  <h1 style="font-size:28px"><span class="brand" style="font-size:28px">Obs<span>ervatory</span></span></h1>
   <p class="muted" style="font-size:15px;max-width:760px">A local practice ground for distributed-systems debugging and system design. It doesn't run real distributed systems. It simulates the <b>tools you'd use to debug them</b>: dashboards, service maps, per-instance heatmaps, traces, and logs. Think <i>nsys for microservices</i>. Claude writes incident scenarios. You investigate, write a report, and paste it back to be graded.</p>
 
   <div class="cards" style="margin-top:22px">
-    <a class="card" href="observatory.html"><h3>🔭 Incident Observatory</h3><p>Open a scenario and debug it: Brief → Service Map → Metrics → Heatmap → Timeline → Traces → Logs → Report.</p></a>
-    <a class="card" href="lab.html"><h3>🧪 Concepts Lab</h3><p>Interactive visualizations: queueing and the utilization knee, fan-out tail latency, consistent hashing, quorums, LSM trees, caching, isolation anomalies, rate limiting, capacity estimation.</p></a>
-    <a class="card" href="https://github.com/trevorbchen/networking_design/tree/main/design/questions"><h3>📐 Design questions</h3><p>Classic system-design prompts in <code>design/questions/</code>. Write your design and send it to Claude for a review against the rubric.</p></a>
+    <a class="card" href="observatory.html"><h3>Incident Observatory</h3><p>Open a scenario and debug it: Brief → Service Map → Metrics → Heatmap → Timeline → Traces → Logs → Report.</p></a>
+    <a class="card" href="lab.html"><h3>Concepts Lab</h3><p>Interactive visualizations: queueing and the utilization knee, fan-out tail latency, consistent hashing, quorums, LSM trees, caching, isolation anomalies, rate limiting, capacity estimation.</p></a>
+    <a class="card" href="https://github.com/trevorbchen/networking_design/tree/main/design/questions"><h3>Design questions</h3><p>Classic system-design prompts in <code>design/questions/</code>. Write your design and send it to Claude for a review against the rubric.</p></a>
   </div>
 
   <h2 style="margin-top:30px">Scenarios</h2>
@@ -39,10 +39,7 @@
     for (const id of Object.keys(OBS.scenarios).sort()) {
       const s = OBS.scenarios[id];
       let prog = null; try { prog = JSON.parse(localStorage.getItem('obs:' + id)); } catch (e) {}
-      host.append(OBS.el('a', { class: 'card', href: 'observatory.html#s=' + id },
-        OBS.el('h3', {}, s.title),
-        OBS.el('div', { class: 'row', style: { marginBottom: '6px' } }, OBS.el('span', { class: 'pill ' + (s.difficulty || '') }, s.difficulty || '?'), OBS.el('span', { class: 'dim mono' }, id), prog ? OBS.el('span', { class: 'pill' }, 'in progress') : ''),
-        OBS.el('p', {}, (s.tags || []).join(' · '))));
+      host.append(OBS.scenarioCard(s, prog, 'observatory.html#s=' + id));
     }
   };
   for (const f of OBS.manifest) { const sc = document.createElement('script'); sc.src = 'scenarios/' + f; sc.onload = sc.onerror = () => { if (--pending === 0) done(); }; document.head.append(sc); }

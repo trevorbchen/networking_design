@@ -9,12 +9,12 @@
 <body>
 <div class="page">
   <h1 style="font-size:28px"><span class="brand" style="font-size:28px">Obs<span>ervatory</span></span></h1>
-  <p class="muted" style="font-size:15px;max-width:760px">A local practice ground for distributed-systems debugging and system design. It doesn't run real distributed systems. It simulates the <b>tools you'd use to debug them</b>: dashboards, service maps, per-instance heatmaps, traces, and logs. Think <i>nsys for microservices</i>. Claude writes incident scenarios. You investigate, write a report, and paste it back to be graded.</p>
+  <p class="muted" style="font-size:15px;max-width:760px">A local practice ground for distributed-systems and <b>ML-systems</b> debugging and system design. It doesn't run real distributed systems. It simulates the <b>tools you'd use to debug them</b>: dashboards, service maps, per-instance heatmaps, traces, and logs. Think <i>nsys for microservices</i>. Claude writes incident scenarios. You investigate, write a report, and paste it back to be graded.</p>
 
   <div class="cards" style="margin-top:22px">
     <a class="card" href="observatory.html"><h3>Incident Observatory</h3><p>Open a scenario and debug it: Brief → Service Map → Metrics → Heatmap → Timeline → Traces → Logs → Report.</p></a>
-    <a class="card" href="lab.html"><h3>Concepts Lab</h3><p>Interactive visualizations: queueing and the utilization knee, fan-out tail latency, consistent hashing, quorums, LSM trees, caching, isolation anomalies, rate limiting, capacity estimation.</p></a>
-    <a class="card" href="https://github.com/trevorbchen/networking_design/tree/main/design/questions"><h3>Design questions</h3><p>Classic system-design prompts in <code>design/questions/</code>. Write your design and send it to Claude for a review against the rubric.</p></a>
+    <a class="card" href="lab.html"><h3>Concepts Lab</h3><p>Interactive visualizations. ML: GPU roofline, LLM serving / KV-cache calculator, distributed-training scaling. Classic: queueing and the utilization knee, fan-out tail latency, consistent hashing, quorums, LSM trees, caching, isolation anomalies, rate limiting, capacity estimation.</p></a>
+    <a class="card" href="https://github.com/trevorbchen/networking_design/tree/main/design/questions"><h3>Design questions</h3><p>System-design prompts in <code>design/questions/</code>, including ML platforms (LLM inference, large-scale training, real-time recsys). Write your design and send it to Claude for a review against the rubric.</p></a>
   </div>
 
   <h2 style="margin-top:30px">Scenarios</h2>
@@ -27,7 +27,7 @@
     <li>Investigate. Pin evidence (<kbd>p</kbd> on a chart), and fill in the <b>Report</b> tab.</li>
     <li>Press <b>Copy as Markdown</b> and paste it to Claude. You get graded against the hidden answer key, with feedback, and it's logged in <code>progress/log.md</code>.</li>
   </ol>
-  <p class="dim">Docs: <code>README.md</code>, <code>docs/observability-primer.md</code>, <code>docs/debugging-playbook.md</code>, <code>docs/system-design-primer.md</code>, <code>docs/scenario-format.md</code>.</p>
+  <p class="dim">Docs: <code>README.md</code>, <code>docs/observability-primer.md</code>, <code>docs/debugging-playbook.md</code>, <code>docs/ml-systems-primer.md</code>, <code>docs/system-design-primer.md</code>, <code>docs/scenario-format.md</code>.</p>
 </div>
 <script src="assets/js/engine.js"></script>
 <script src="assets/js/charts.js"></script>

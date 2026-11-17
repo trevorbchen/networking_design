@@ -31,6 +31,9 @@ scripts/resume_after_reset.sh  schedule an unattended resume of a Claude session
 ```
 
 ## Workflow A: "make me a new scenario"
+0. **The user's primary interest is ML systems** (training infra, GPU/NCCL performance, LLM serving, production ML
+   quality). Default new scenarios, Lab widgets and design questions to ML unless they ask for something else.
+   ML scenarios: 007, 008, 009, 010 are templates. `docs/ml-systems-primer.md` lists ML failure modes.
 1. Check `progress/log.md` for what the user has done and their weak spots. Pick a failure mode they
    haven't seen (see the catalog in `docs/debugging-playbook.md`) unless they asked for something specific.
    Vary difficulty, domain (e-commerce, social, fintech, streaming, ML serving, infra), and which tool is
@@ -73,7 +76,7 @@ scripts/resume_after_reset.sh  schedule an unattended resume of a Claude session
   clarifying questions, push on capacity numbers and trade-offs, then grade with `answers/design/<slug>.md`.
 - New design questions: add the prompt to `design/questions/` and a rubric to `answers/design/`.
 - Point to relevant Lab widgets (`lab.html#queueing`, `#hashing`, `#quorum`, `#lsm`, `#cache`,
-  `#isolation`, `#envelope`, `#ratelimit`, `#fanout`).
+  `#isolation`, `#envelope`, `#ratelimit`, `#fanout`; ML: `#roofline`, `#llmserve`, `#training`).
 
 ## Extending the GUI
 - Engine features (new helper functions, new data types) go in `engine.js`; document them in

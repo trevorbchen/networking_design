@@ -10,4 +10,6 @@ OBS.manifest = [
   '006-hot-partition.js',
   '007-training-slowdown.js',
   '008-llm-serving-kv.js',
+  '009-gpu-straggler.js',
+  '010-feature-skew.js',
 ];

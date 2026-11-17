@@ -313,6 +313,133 @@
     draw();
   });
 
+  // ================================================================ ML ====
+  const GPUS = {
+    H100: { name: 'H100 SXM', tflops: 989, bw: 3.35, mem: 80 },
+    A100: { name: 'A100 SXM', tflops: 312, bw: 2.0, mem: 80 },
+    L4: { name: 'L4', tflops: 121, bw: 0.3, mem: 24 },
+  };
+  function select(label, options, value, onChange) {
+    const s = el('select', { onchange: () => onChange(s.value) }, ...Object.entries(options).map(([k, v]) => el('option', { value: k, selected: k === value }, v)));
+    return el('div', { class: 'ctrl' }, el('label', {}, label), s, el('output', {}, ''));
+  }
+  const log10 = Math.log10, pow10 = (v) => Math.pow(10, v);
+  const sci = (v) => { const x = pow10(v); return x >= 1000 ? fmt.num(x) : x >= 1 ? String(Math.round(x)) : x.toPrecision(1); };
+
+  // ------------------------------------------------------------ roofline --
+  add('roofline', 'ML · GPU roofline (compute vs memory bound)', (host) => {
+    host.append(el('h2', {}, 'Roofline: is this kernel limited by FLOPs or by memory bandwidth?'),
+      el('p', {}, 'A GPU can do P FLOP/s of math but only move B bytes/s from HBM. A kernel\'s ', el('b', {}, 'arithmetic intensity'), ' AI = FLOPs / bytes moved decides which limit it hits: attainable = min(P, AI × B). The crossover ("ridge") is P/B. That\'s ~295 FLOP/byte on an H100. Below it you are ', el('b', {}, 'memory-bound'), ' and faster math units don\'t help. Only moving fewer bytes (batching, fusion, quantization) does.'),
+      el('div', { class: 'callout' }, el('b', {}, 'The LLM-serving punchline: '), 'decoding one token multiplies a (batch × d) activation by a (d × d) weight. The weights are read once per step no matter the batch, so AI ≈ batch size. At batch 1 an H100 runs at ~0.3% of peak. This is why inference servers batch aggressively, and why ', el('i', {}, 'prefill'), ' (thousands of tokens at once) is compute-bound while ', el('i', {}, 'decode'), ' is memory-bound.'));
+    const st = { gpu: 'H100', M: 8, K: 8192, N: 8192, bytes: 2 };
+    const stats = el('div', { class: 'stat-row' }), plot = el('div', { class: 'panel' });
+    host.append(select('GPU', Object.fromEntries(Object.entries(GPUS).map(([k, g]) => [k, g.name + ' (' + g.tflops + ' TF, ' + g.bw + ' TB/s)'])), st.gpu, (v) => { st.gpu = v; draw(); }),
+      slider('M = tokens in the batch (log)', 0, 4.2, 0.05, log10(st.M), (v) => { st.M = Math.round(pow10(v)); draw(); }, (v) => String(Math.round(pow10(v)))),
+      slider('K = N = hidden size', 1024, 16384, 1024, st.K, (v) => { st.K = st.N = v; draw(); }),
+      select('precision', { 2: 'bf16 (2 bytes)', 1: 'fp8 / int8 (1 byte, 2× FLOPs)' }, '2', (v) => { st.bytes = +v; draw(); }),
+      stats, plot,
+      el('p', { class: 'muted' }, 'Try it: M=1 (decode, batch 1) vs M=256 (decode, batch 256) vs M=4096 (prefill of a 4k prompt). Watch the dot climb the slanted memory roof until it hits the flat compute roof. Then switch to the L4: its ridge is much lower, so it becomes compute-bound sooner.'));
+    function draw() {
+      const g = GPUS[st.gpu], P = g.tflops * 1e12 * (st.bytes === 1 ? 2 : 1), B = g.bw * 1e12;
+      const flops = 2 * st.M * st.K * st.N, bytes = st.bytes * (st.M * st.K + st.K * st.N + st.M * st.N);
+      const ai = flops / bytes, att = Math.min(P, ai * B), t = flops / att;
+      const ridge = P / B;
+      stats.innerHTML = '';
+      stats.append(stat('arithmetic intensity', ai.toFixed(1) + ' FLOP/B'), stat('ridge point', ridge.toFixed(0) + ' FLOP/B'), stat('bound by', ai < ridge ? 'memory bandwidth' : 'compute'),
+        stat('attainable', (att / 1e12).toFixed(1) + ' TFLOP/s'), stat('% of peak', (100 * att / P).toFixed(1) + '%'), stat('kernel time', fmt.ms(t * 1000)));
+      const roof = []; for (let x = -0.5; x <= 4; x += 0.02) roof.push([x, log10(Math.min(P, pow10(x) * B) / 1e12)]);
+      OBS.svgPlot(plot, [{ label: 'roofline (attainable TFLOP/s)', points: roof, color: '#4e9cff' }],
+        { xLabel: 'arithmetic intensity (FLOP/byte, log)', yLabel: 'TFLOP/s (log)', xMin: -0.5, xMax: 4, yMin: -0.5, yMax: log10(P / 1e12) + 0.3, xFmt: sci, yFmt: sci,
+          markers: [[log10(ai), log10(att / 1e12), '#f2617a']], bands: [{ x0: -0.5, x1: log10(ridge), color: '#f5a524', opacity: 0.06 }], height: 320 });
+    }
+    draw();
+  });
+
+  // ---------------------------------------------------------- LLM serving --
+  const MODELS = {
+    '8b': { name: 'Llama-3-8B-like (GQA)', P: 8e9, L: 32, kv: 8, hd: 128 },
+    '13b': { name: '13B (no GQA, MHA)', P: 13e9, L: 40, kv: 40, hd: 128 },
+    '70b': { name: 'Llama-3-70B-like (GQA)', P: 70e9, L: 80, kv: 8, hd: 128 },
+    '405b': { name: '405B (GQA)', P: 405e9, L: 126, kv: 8, hd: 128 },
+  };
+  add('llmserve', 'ML · LLM serving: KV cache, batching, TTFT/TPOT', (host) => {
+    host.append(el('h2', {}, 'LLM serving calculator: where the memory and the time go'),
+      el('p', {}, 'GPU memory holds ', el('b', {}, 'weights'), ' (params × bytes) plus the ', el('b', {}, 'KV cache'), ': for every token of every running request, each layer stores a key and a value vector. KV bytes per token = 2 × layers × kv_heads × head_dim × bytes. Free memory ÷ (KV per token × context) is how many requests can run at once.'),
+      el('p', {}, el('b', {}, 'Decode'), ' (one token per step for every running request) is memory-bound: each step reads all weights plus every running request\'s KV. Bigger batch → much higher throughput, slightly slower tokens. ', el('b', {}, 'Prefill'), ' (the prompt) is compute-bound and sets time-to-first-token (TTFT).'));
+    const st = { model: '70b', gpu: 'H100', tp: 8, wb: 2, ctx: 4096, batch: 64 };
+    const stats = el('div', { class: 'stat-row' }), plot = el('div', { class: 'panel' }), plot2 = el('div', { class: 'panel' });
+    host.append(select('model', Object.fromEntries(Object.entries(MODELS).map(([k, m]) => [k, m.name])), st.model, (v) => { st.model = v; draw(); }),
+      select('GPU', Object.fromEntries(Object.entries(GPUS).map(([k, g]) => [k, g.name])), st.gpu, (v) => { st.gpu = v; draw(); }),
+      slider('GPUs (tensor parallel)', 1, 16, 1, st.tp, (v) => { st.tp = v; draw(); }),
+      select('weights / KV precision', { 2: 'bf16', 1: 'fp8' }, '2', (v) => { st.wb = +v; draw(); }),
+      slider('avg context per request (prompt + output)', 256, 131072, 256, st.ctx, (v) => { st.ctx = v; draw(); }, (v) => fmt.num(v) + ' tok', true),
+      slider('running batch (concurrent requests)', 1, 512, 1, st.batch, (v) => { st.batch = v; draw(); }),
+      stats, plot, plot2,
+      el('p', { class: 'muted' }, 'Try it: 70B on 8×H100, context 4k: lots of headroom. Now raise context to 32k: max batch collapses, so throughput collapses too (scenario 008). Switch to the 13B MHA model: no grouped-query attention means ~2.5× more KV per token than the 70B, despite being 5× smaller! Try fp8 to see how quantization buys both memory and speed. Numbers are idealized (~80% of bandwidth, 50% MFU for prefill).'));
+    function draw() {
+      const m = MODELS[st.model], g = GPUS[st.gpu];
+      const wBytes = m.P * st.wb, mem = st.tp * g.mem * 1e9 * 0.9;
+      const kvTok = 2 * m.L * m.kv * m.hd * st.wb;
+      const kvCapTok = Math.max(0, (mem - wBytes) / kvTok);
+      const maxBatch = Math.floor(kvCapTok / st.ctx);
+      const BW = st.tp * g.bw * 1e12 * 0.8, PEAK = st.tp * g.tflops * 1e12 * (st.wb === 1 ? 2 : 1) * 0.5;
+      const stepT = (b) => (wBytes + b * st.ctx * 0.5 * kvTok) / BW + 0.004 * (st.tp > 1 ? 1 : 0.5); // avg request is halfway through its context
+      const b = Math.min(st.batch, Math.max(maxBatch, 0));
+      const prompt = st.ctx * 0.75, ttft = 2 * m.P * prompt / PEAK;
+      stats.innerHTML = '';
+      const fits = wBytes < mem;
+      stats.append(stat('weights', fmt.bytes(wBytes)), stat('KV per token', fmt.bytes(kvTok)), stat('KV per request', fmt.bytes(kvTok * st.ctx)),
+        stat('KV pool', fits ? fmt.num(kvCapTok) + ' tokens' : 'weights don\'t fit!'), stat('max concurrent requests', fits ? String(maxBatch) : '0'),
+        stat('TPOT at batch ' + b, b > 0 ? fmt.ms(stepT(b) * 1000) : '–'), stat('throughput', b > 0 ? fmt.num(b / stepT(b)) + ' tok/s' : '–'), stat('TTFT (prefill ' + fmt.num(prompt) + ' tok)', fmt.ms(ttft * 1000)));
+      if (st.batch > maxBatch && fits) stats.append(stat('⚠ batch ' + st.batch, 'exceeds KV → queueing/preemption'));
+      if (!fits || maxBatch < 1) { plot.innerHTML = '<p class="muted">Model + one request do not fit in memory. Add GPUs or quantize.</p>'; plot2.innerHTML = ''; return; }
+      const thr = [], tp = [], lim = Math.max(2, Math.min(512, maxBatch));
+      for (let x = 1; x <= lim; x += Math.max(1, Math.floor(lim / 120))) { thr.push([x, x / stepT(x)]); tp.push([x, stepT(x) * 1000]); }
+      OBS.svgPlot(plot, [{ label: 'decode throughput (tokens/s)', points: thr, color: '#3fcf8e' }], { xLabel: 'running batch (up to the KV limit)', yLabel: 'tokens/s', yFmt: fmt.num, markers: [[b, b / stepT(b)]], height: 240 });
+      OBS.svgPlot(plot2, [{ label: 'time per output token (ms)', points: tp, color: '#f5a524' }], { xLabel: 'running batch', yLabel: 'TPOT (ms)', yMin: 0, markers: [[b, stepT(b) * 1000]], height: 200 });
+    }
+    draw();
+  });
+
+  // ------------------------------------------------- distributed training --
+  add('training', 'ML · Distributed training: step time & scaling', (host) => {
+    host.append(el('h2', {}, 'Data-parallel training: compute, all-reduce, overlap and stragglers'),
+      el('p', {}, 'Training FLOPs ≈ ', el('b', {}, '6 × params × tokens'), ' (2 forward + 4 backward). With data parallelism, every GPU computes on its own tokens, then all GPUs ', el('b', {}, 'all-reduce'), ' gradients. A ring all-reduce sends ≈ 2·(N−1)/N × gradient bytes per GPU. That\'s roughly constant in N, so bandwidth cost doesn\'t grow, but the latency term (2(N−1) hops) does. Comm overlapped with backward is free. Only the part that sticks out ("exposed") adds to step time.'),
+      el('div', { class: 'callout' }, el('b', {}, 'Synchronous = slowest wins. '), 'Each step waits for the slowest GPU. If per-GPU step time jitters with coefficient of variation σ, the expected max over N GPUs grows like σ·√(2 ln N). At 1,000s of GPUs, small jitter (or one throttled GPU, or one bad link: scenario 007) taxes everyone.'));
+    const st = { P: 13, N: 128, tok: 32768, bw: 50, ovl: 70, cv: 2, mfu: 45 };
+    const stats = el('div', { class: 'stat-row' }), plot = el('div', { class: 'panel' });
+    host.append(slider('model params (B)', 1, 200, 1, st.P, (v) => { st.P = v; draw(); }, (v) => v + 'B'),
+      slider('GPUs N (log)', 0, 4, 0.05, log10(st.N), (v) => { st.N = Math.round(pow10(v)); draw(); }, (v) => String(Math.round(pow10(v)))),
+      slider('tokens per GPU per step', 2048, 262144, 2048, st.tok, (v) => { st.tok = v; draw(); }, fmt.num),
+      slider('network bandwidth per GPU (GB/s)', 5, 100, 5, st.bw, (v) => { st.bw = v; draw(); }, (v) => v + ' GB/s (' + v * 8 + ' Gb/s)'),
+      slider('% of comm overlappable with backward', 0, 100, 5, st.ovl, (v) => { st.ovl = v; draw(); }, (v) => v + '%'),
+      slider('per-GPU step-time jitter σ', 0, 15, 0.5, st.cv, (v) => { st.cv = v; draw(); }, (v) => v + '%'),
+      stats, plot,
+      el('p', { class: 'muted' }, 'Try it: drop bandwidth from 50 to 12 GB/s (a 400→100 Gb/s link, as in scenario 007) and watch exposed comm appear. Cut tokens per GPU (smaller batch) and comm takes a bigger share. Raise jitter to 5% at 4,096 GPUs to see the straggler tax. Memory: plain DP needs ~16 bytes/param on every GPU (bf16 weights+grads, fp32 Adam states + master weights). FSDP/ZeRO-3 shards that across N.'));
+    function model(N) {
+      const H = GPUS.H100, Pp = st.P * 1e9;
+      const compute = 6 * Pp * st.tok / (H.tflops * 1e12 * st.mfu / 100);
+      const bwd = compute * 2 / 3;
+      const comm = N > 1 ? (2 * (N - 1) / N) * Pp * 2 / (st.bw * 1e9) + 2 * (N - 1) * 8e-6 : 0;
+      const exposed = Math.max(0, comm - bwd * st.ovl / 100);
+      const straggle = compute * (st.cv / 100) * Math.sqrt(2 * Math.log(Math.max(2, N)));
+      const step = compute + straggle + exposed;
+      return { compute, comm, exposed, straggle, step, eff: compute / step };
+    }
+    function draw() {
+      const r = model(st.N), Pp = st.P * 1e9;
+      stats.innerHTML = '';
+      stats.append(stat('compute / step', fmt.ms(r.compute * 1000)), stat('all-reduce', fmt.ms(r.comm * 1000)), stat('exposed comm', fmt.ms(r.exposed * 1000)), stat('straggler tax', fmt.ms(r.straggle * 1000)),
+        stat('step time', fmt.ms(r.step * 1000)), stat('scaling efficiency', (100 * r.eff).toFixed(0) + '%'), stat('cluster tokens/s', fmt.num(st.N * st.tok / r.step)),
+        stat('memory/GPU: DP vs FSDP', fmt.bytes(16 * Pp) + ' vs ' + fmt.bytes(16 * Pp / st.N)));
+      const e = [], ex = [], sg = [];
+      for (let x = 0; x <= 4.01; x += 0.05) { const n = Math.max(1, Math.round(pow10(x))), m = model(n); e.push([x, 100 * m.eff]); ex.push([x, 100 * m.exposed / m.step]); sg.push([x, 100 * m.straggle / m.step]); }
+      OBS.svgPlot(plot, [{ label: 'scaling efficiency', points: e, color: '#3fcf8e' }, { label: 'exposed comm share', points: ex, color: '#f2617a' }, { label: 'straggler share', points: sg, color: '#f5a524' }],
+        { xLabel: 'GPUs (log)', xMin: 0, xMax: 4, xFmt: sci, yLabel: '% of step', yMax: 100, yFmt: (v) => v + '%', markers: [[log10(st.N), 100 * r.eff]], height: 280 });
+    }
+    draw();
+  });
+
   // ----------------------------------------------------------------- boot --
   window.addEventListener('DOMContentLoaded', () => {
     const nav = document.getElementById('nav'), body = document.getElementById('body');

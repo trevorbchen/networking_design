@@ -8,9 +8,14 @@ dashboards, a service map, per-instance heatmaps, a timeline, distributed traces
 equivalent of NVIDIA nsys for microservices. Claude writes realistic incidents (with red herrings). You investigate them in
 the GUI, write an incident report, and paste it back to Claude to be graded against a hidden answer key.
 
-There's also a **Concepts Lab** of interactive visualizations (queueing, consistent hashing, quorums, LSM
-trees, caching, isolation levels, rate limiting, capacity estimation) and a set of **classic system-design
-questions** with rubrics.
+**Focus: ML systems.** Most new scenarios are ML infrastructure incidents: distributed training (NCCL/InfiniBand,
+straggler GPUs, step-time profiles that look like nsys timelines), LLM inference serving (KV cache, batching, TTFT/TPOT),
+and production ML quality (training-serving skew, drift, calibration). Classic backend incidents are included too.
+
+There's also a **Concepts Lab** of interactive visualizations: ML ones (GPU roofline, LLM serving / KV-cache
+calculator, distributed-training step time & scaling) and classic ones (queueing, consistent hashing, quorums, LSM
+trees, caching, isolation levels, rate limiting, capacity estimation). Plus **system-design questions** with rubrics,
+including ML platform designs.
 
 ## Quick start
 1. Open `index.html` in a browser (double-click works, no server needed). Chrome/Edge/Firefox all work.
@@ -51,6 +56,14 @@ Keyboard: `p` pins the value under the cursor, `z` zooms out, `Esc` closes dialo
 | 003-retry-storm | hard | the DB came back, the site didn't |
 | 004-cache-stampede | medium | product pages error every five minutes |
 | 005-stale-reads | medium | saved settings keep reverting (DB replication) |
+| 006-hot-partition | medium | order confirmations 30 min late (Kafka / streaming) |
+| 007-training-slowdown | medium | **ML** · pretraining run a third slower overnight (128 GPUs) |
+| 008-llm-serving-kv | hard | **ML** · chatbot slow and timing out, traffic normal (LLM serving) |
+| 009-gpu-straggler | hard | **ML** · training step time keeps jumping (256 GPUs) |
+| 010-feature-skew | hard | **ML** · recommendation CTR down 30%, nothing broken |
+
+Design questions: 01 url-shortener · 02 rate-limiter · 03 news-feed · 04 kv-store · 05 ticketing · 06 metrics-pipeline ·
+**07 llm-inference-platform · 08 training-platform · 09 realtime-recsys** (ML).
 
 ## Folder layout
 ```
@@ -61,7 +74,7 @@ assets/js/observatory.js the debugging console
 assets/js/lab.js         Concepts Lab widgets
 scenarios/               one file per incident + manifest.js
 answers/                 SPOILERS: answer keys & rubrics
-design/questions/        classic system-design prompts
+design/questions/        system-design prompts (classic + ML platforms)
 docs/                    primers (start with observability-primer.md)
 reports/, progress/      your graded reports and progress log
 tools/validate.js        `node tools/validate.js` checks every scenario
@@ -71,6 +84,8 @@ scripts/                 resume_after_reset.sh (auto-resume a Claude session lat
 ## Docs
 - `docs/observability-primer.md`: golden signals, RED/USE, percentiles, saturation, how to read the tools, and the nsys analogy.
 - `docs/debugging-playbook.md`: the investigation loop, cognitive traps, and a catalog of ~20 failure modes with their signatures.
+- `docs/ml-systems-primer.md`: GPU performance (roofline, MFU), distributed training (parallelism, collectives, stragglers,
+  checkpointing), LLM serving (KV cache, batching, TTFT/TPOT), production ML (skew, drift, calibration), and their failure signatures.
 - `docs/system-design-primer.md`: the interview framework, building blocks, trade-offs, and DB selection.
 - `docs/scenario-format.md`: how scenarios are written (for Claude, or for you to write your own).
 - `CLAUDE.md`: instructions Claude follows in this repo.

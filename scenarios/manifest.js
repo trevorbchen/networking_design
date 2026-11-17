@@ -1,0 +1,5 @@
+/* List of scenario files the Observatory loads (relative to scenarios/).
+ * Add a line here whenever a new scenario file is created. */
+OBS.manifest = [
+  '000-tutorial-oom.js',
+];

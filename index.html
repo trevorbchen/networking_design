@@ -17,7 +17,10 @@
     <a class="card" href="https://github.com/trevorbchen/networking_design/tree/main/design/questions"><h3>Design questions</h3><p>System-design prompts in <code>design/questions/</code>, including ML platforms (LLM inference, large-scale training, real-time recsys). Write your design and send it to Claude for a review against the rubric.</p></a>
   </div>
 
-  <h2 style="margin-top:30px">Scenarios</h2>
+  <h2 style="margin-top:30px">ML systems scenarios</h2>
+  <p class="muted" style="margin-top:-6px">Distributed training, GPU/NCCL performance, LLM serving, production model quality. New to the Observatory? Do the 5-minute tutorial below first.</p>
+  <div class="cards" id="scen-ml"></div>
+  <h2 style="margin-top:30px">Backend &amp; distributed-systems scenarios</h2>
   <div class="cards" id="scen"></div>
 
   <h2 style="margin-top:30px">How the loop works</h2>
@@ -35,9 +38,10 @@
 <script>
   let pending = OBS.manifest.length;
   const done = () => {
-    const host = document.getElementById('scen');
+    const isML = (s) => (s.tags || []).some((t) => /^(ml |llm|gpu|nccl)/.test(t));
     for (const id of Object.keys(OBS.scenarios).sort()) {
       const s = OBS.scenarios[id];
+      const host = document.getElementById(isML(s) ? 'scen-ml' : 'scen');
       let prog = null; try { prog = JSON.parse(localStorage.getItem('obs:' + id)); } catch (e) {}
       host.append(OBS.scenarioCard(s, prog, 'observatory.html#s=' + id));
     }

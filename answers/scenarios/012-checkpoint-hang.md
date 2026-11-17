@@ -47,6 +47,12 @@ Goodput this hour ≈ 0 (the ~30 min of training are all thrown away).
 - **Goodput monitoring**: alert on "steps not advancing / step went backwards", checkpoint duration vs baseline, and restart counts.
   Checkpoint health (last *successful* checkpoint age) as an SLO.
 
+## Real-world commands (how you'd confirm this in production)
+- Flight recorder dump on timeout (`TORCH_NCCL_DUMP_ON_TIMEOUT=1`) → all ranks in ALLGATHER seq N, rank 0 never entered it.
+- `py-spy dump --pid <rank0>` during the hang → stack inside `torch.save` / file write.
+- `lctl get_param mdt.*.md_stats` / Lustre jobstats → metadata ops by client (data-sync-01 dominating). `lfs df`, `iostat -x` on the writer.
+- `nvidia-smi --query-gpu=power.draw,utilization.gpu --format=csv` during the hang: 100% util at ~120 W = busy-waiting.
+
 ## Grading rubric (10 pts)
 | pts | criterion |
 |----|-----------|

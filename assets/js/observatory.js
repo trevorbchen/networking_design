@@ -588,6 +588,58 @@
     cov += ce - cs;
     return Math.max(0, sp.dur - cov);
   }
+  // ------------------------------------------------- Perfetto export ------
+  /** Chrome trace-event JSON (opens in ui.perfetto.dev / chrome://tracing). One process per endpoint, one thread
+   *  per service (extra lanes when spans of the same service overlap without nesting), plus metric counter tracks. */
+  function perfettoJSON(traces, withCounters) {
+    const ev = [], procs = {}, lanes = {}, tids = {};
+    let nextPid = 2, nextTid = 1;
+    const us = (sec) => Math.round(sec * 1e6);
+    const sorted = traces.slice().sort((a, b) => a.t - b.t);
+    const items = [];
+    for (const tr of sorted) {
+      if (!procs[tr.name]) { procs[tr.name] = nextPid++; ev.push({ ph: 'M', name: 'process_name', pid: procs[tr.name], args: { name: tr.name } }); }
+      for (const sp of tr.spans) items.push({ tr, sp, pid: procs[tr.name], s0: tr.t * 1e3 + sp.start, e0: tr.t * 1e3 + sp.start + sp.dur }); // ms
+    }
+    items.sort((a, b) => a.s0 - b.s0 || b.e0 - a.e0); // global start order, parents before children
+    for (const { tr, sp, pid, s0, e0 } of items) {
+      const L = (lanes[pid + '|' + sp.service] = lanes[pid + '|' + sp.service] || []);
+      let li = 0;
+      for (; li < L.length; li++) {
+        const st = L[li];
+        while (st.length && st[st.length - 1].e <= s0 + 1e-6) st.pop();
+        if (!st.length || (st[st.length - 1].tr === tr && e0 <= st[st.length - 1].e + 1e-6)) break;
+      }
+      if (li === L.length) L.push([]);
+      L[li].push({ s: s0, e: e0, tr });
+      const tk = pid + '|' + sp.service + '|' + li;
+      if (!tids[tk]) {
+        tids[tk] = nextTid++;
+        ev.push({ ph: 'M', name: 'thread_name', pid, tid: tids[tk], args: { name: sp.service + (li ? ' #' + (li + 1) : '') } });
+        ev.push({ ph: 'M', name: 'thread_sort_index', pid, tid: tids[tk], args: { sort_index: tids[tk] } });
+      }
+      const ts = Math.round(s0 * 1e3);
+      ev.push({ ph: 'X', name: sp.op, cat: sp.service, pid, tid: tids[tk], ts, dur: Math.max(1, Math.round(e0 * 1e3) - ts),
+        args: Object.assign({ trace: tr.id, endpoint: tr.name }, sp.error ? { error: true } : {}, sp.tags || {}) });
+    }
+    if (withCounters && sorted.length) {
+      const t0 = Math.max(0, sorted[0].t - 120), t1 = sorted[sorted.length - 1].t + 120;
+      ev.push({ ph: 'M', name: 'process_name', pid: 1, args: { name: 'metrics (aggregates)' } });
+      const keys = Object.keys(S.c.series).filter((k) => !S.c.meta[k].instance).slice(0, 80);
+      for (const k of keys) {
+        const m = S.c.meta[k], name = k + (m.unit ? ' (' + m.unit + ')' : '');
+        for (let i = 0; i < S.c.n; i++) { const t = S.c.times[i]; if (t < t0 || t > t1) continue; ev.push({ ph: 'C', name, pid: 1, ts: us(t), args: { value: +S.c.series[k][i].toPrecision(6) } }); }
+      }
+    }
+    return JSON.stringify({ traceEvents: ev, displayTimeUnit: 'ms', otherData: { scenario: S.c.scenario.id, start: S.c.scenario.startTime, note: 'ts is microseconds since incident-window start' } });
+  }
+  function exportPerfetto(traces, suffix) {
+    if (!traces.length) { OBS.toast('No traces to export'); return; }
+    const a = el('a', { href: URL.createObjectURL(new Blob([perfettoJSON(traces, true)], { type: 'application/json' })), download: S.c.scenario.id + '-' + suffix + '.perfetto.json' });
+    document.body.append(a); a.click(); a.remove();
+    OBS.toast('Saved ' + traces.length + ' trace(s). Open ui.perfetto.dev → "Open trace file"');
+  }
+
   VIEWS.traces = function () {
     const v = el('div', { class: 'view' }); $.main.append(v);
     const all = S.c.traces.filter((x) => inRange(x.t));
@@ -603,6 +655,9 @@
     for (const x of [nameSel, svcSel, errCb, minIn, sortSel]) x.addEventListener('change', () => { Object.assign(f, { name: nameSel.value, svc: svcSel.value, err: errCb.checked, min: minIn.value, sort: sortSel.value }); save(); showTab('traces'); });
     v.append(el('div', { class: 'toolbar' }, nameSel, svcSel, el('label', {}, errCb, 'errors only'), el('label', {}, 'slower than', minIn), sortSel));
     let list = all.filter((x) => (!f.name || x.name === f.name) && (!f.svc || x.services.includes(f.svc)) && (!f.err || x.error) && (!f.min || x.dur >= +f.min));
+    v.lastChild.append(el('span', { class: 'spacer', style: { flex: 1 } }),
+      el('button', { title: 'Download the selected trace as Chrome trace JSON for ui.perfetto.dev', onclick: () => { const x = S.c.traces.find((q) => q.id === S.selTrace) || list[0]; exportPerfetto(x ? [x] : [], 'trace-' + (x ? x.id : '')); } }, '⤓ selected → Perfetto'),
+      el('button', { title: 'Download up to 500 filtered traces (current time window) plus metric counter tracks', onclick: () => exportPerfetto(list.slice().sort((a, b) => a.t - b.t).slice(0, 500), 'traces') }, '⤓ filtered (' + Math.min(500, list.length) + ') → Perfetto'));
     const durs = list.map((x) => x.dur).sort((a, b) => a - b);
     v.append(el('div', { class: 'stat-row' },
       [['traces', list.length], ['p50', fmt.ms(pct(durs, 0.5))], ['p95', fmt.ms(pct(durs, 0.95))], ['p99', fmt.ms(pct(durs, 0.99))], ['max', fmt.ms(durs[durs.length - 1] || 0)], ['errors', list.length ? ((100 * list.filter((x) => x.error).length) / list.length).toFixed(1) + '%' : '–']]
@@ -738,6 +793,7 @@
     ['ruled', 'Red herrings ruled out', 'What looked suspicious but wasn\'t the cause, and how you ruled it out.'],
     ['mitigate', 'Immediate mitigation', 'What would you do right now, while paged, to stop the bleeding?'],
     ['prevent', 'Long-term fixes & prevention', 'Design changes, alerts, capacity, guardrails. What threshold or alert would have caught this earlier?'],
+    ['prod', 'How you\'d confirm in production', 'Which real tools/commands would you run to confirm this on a live system? (nvidia-smi -q, ibstat, nsys, kubectl, PromQL, vLLM /metrics...) See docs/real-tools.md.'],
     ['conf', 'Confidence & open questions', 'How sure are you? What data would you want that the tools didn\'t show?'],
   ];
   VIEWS.report = function () {

@@ -48,6 +48,12 @@ during the slow windows while every other node's jumps to ~1.46 s. Its `compute_
   "someone else is late".
 - Keep hot spares and frequent (async) checkpoints so cordon-and-restart is cheap.
 
+## Real-world commands (how you'd confirm this in production)
+- `nvidia-smi -q -d PERFORMANCE -i 6` on node-23 → `HW Slowdown: Active`, `HW Thermal Slowdown: Active` during slow windows.
+- `nvidia-smi dmon -s pct -i 6` → SM clock dropping to ~1100 MHz, temperature sawtooth. `ipmitool sel list` → FAN6 lower critical.
+- PyTorch NCCL flight recorder / per-rank step timers → rank 182 always last to enter the collective.
+- `dcgmi diag -r 3` on the node after draining (it may pass if cooled: hardware tickets need the IPMI evidence).
+
 ## Grading rubric (10 pts)
 | pts | criterion |
 |----|-----------|

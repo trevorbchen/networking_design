@@ -70,6 +70,8 @@ scripts/resume_after_reset.sh  schedule an unattended resume of a Claude session
 4. Append a row to `progress/log.md` (date, id, score, hints used, time, key gaps). Update the
    "Weak spots / next focus" section there.
 5. Note hints used (it's in the report header). Don't penalize heavily, but track it.
+6. Comment on the "How you'd confirm in production" section: point out the real command/tool they missed (each ML
+   answer key has a "Real-world commands" section; see also `docs/real-tools.md`). It isn't scored, but give feedback on it.
 
 ## Workflow C: design questions
 - The user picks a file from `design/questions/` (or asks for a new one). Act like an interviewer: answer

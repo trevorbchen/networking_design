@@ -55,6 +55,12 @@ The nightly health check didn't catch it: DCGM diag level 1 tests GPUs, not IB l
 - Possibly bigger gradient buckets / more overlap (or FSDP prefetch tuning) to give more headroom, but it can't
   cover a 4× slower link.
 
+## Real-world commands (how you'd confirm this in production)
+- `ibstat` on node-11 → `mlx5_3: Rate: 100` (others 400). `perfquery -x` → SymbolErrorCounter climbing, LinkDownedCounter 1.
+- `dmesg -T | grep mlx5` → the cable error / link-down / renegotiated rate lines.
+- `NCCL_DEBUG=INFO` → `NET/IB : Got async event : port error`. Between runs, `all_reduce_perf` across nodes shows low busbw only for rings through node-11.
+- `nsys`/`torch.profiler` on rank 0: NCCL AllReduce kernels ~2× longer and no longer hidden under backward kernels.
+
 ## Grading rubric (10 pts)
 | pts | criterion |
 |----|-----------|

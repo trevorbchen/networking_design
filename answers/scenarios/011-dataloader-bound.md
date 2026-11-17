@@ -35,6 +35,12 @@ but GPU compute is only 0.92 s. The input pipeline is now the critical path. Ste
 - Dashboards/alerts on `dataloader_wait_s` (or % step time waiting for data) and host CPU saturation, not just GPU util.
 - Capacity rule: per-node CPU decode budget = images/step × ms/image ÷ workers must stay < step compute time with margin.
 
+## Real-world commands (how you'd confirm this in production)
+- `htop` / `mpstat -P ALL 1` on a node: all 32 cores ~100% user, ~0 iowait. `py-spy top --pid <dl-worker>` → time in `PIL.Image.decode`, `resize`.
+- `torch.profiler` / `nsys`: gap before forward (`DataLoader __next__`), GPU idle between steps.
+- Microbenchmark: `for i,b in zip(range(50), loader): pass` with no model → images/s per node vs GPU consumption rate.
+- `aws s3 cp`/`gsutil -m cp` throughput test or the store's per-client metrics to rule storage out.
+
 ## Grading rubric (10 pts)
 | pts | criterion |
 |----|-----------|

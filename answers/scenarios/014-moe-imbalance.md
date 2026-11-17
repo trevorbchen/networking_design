@@ -37,6 +37,12 @@ and expert 41 on node-6 GPU 1. Their expert FFN time grows ~3×. Every MoE layer
 - Per-layer expert load (max/mean, entropy, top-k experts), tokens dropped (if capacity-limited), aux-loss value,
   per-EP-rank expert compute time, and all-to-all *wire* vs *wait* time. Alert on imbalance > 1.5–2 sustained.
 
+## Real-world commands (how you'd confirm this in production)
+- Megatron/DeepSpeed MoE logs: per-layer expert token counts (`--moe-per-layer-logging` style) and aux-loss values. Plot max/mean and entropy over steps.
+- `nsys` on rank 0 and on the rank hosting expert 13: compare grouped-GEMM (expert FFN) kernel time. rank 0's all-to-all is mostly wait.
+- `git diff` of the run config vs the previous run (`moe.aux_loss_coeff`).
+- `nvidia-smi dmon` on node-2 vs node-1: busier SMs, normal clocks (rules out bad hardware).
+
 ## Grading rubric (10 pts)
 | pts | criterion |
 |----|-----------|

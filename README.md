@@ -34,6 +34,9 @@ including ML platform designs.
 **Don't open `answers/`.** It's the answer keys.
 
 ## The Observatory tabs
+
+Traces can be exported to **Perfetto** (Traces tab → ⤓ buttons → open at ui.perfetto.dev), the same viewer used for `torch.profiler` / nsys-style timelines.
+
 | tab | what it's for | real-world equivalent |
 |---|---|---|
 | Brief | the page you got: alert, context, architecture notes, change log, hints | PagerDuty + wiki + deploy log |
@@ -90,6 +93,7 @@ scripts/                 resume_after_reset.sh (auto-resume a Claude session lat
 - `docs/debugging-playbook.md`: the investigation loop, cognitive traps, and a catalog of ~20 failure modes with their signatures.
 - `docs/ml-systems-primer.md`: GPU performance (roofline, MFU), distributed training (parallelism, collectives, stragglers,
   checkpointing), LLM serving (KV cache, batching, TTFT/TPOT), production ML (skew, drift, calibration), and their failure signatures.
+- `docs/real-tools.md`: maps each Observatory tab to real tools (Grafana, Jaeger, nsys, Perfetto, DCGM, ibstat, vLLM metrics...) with the commands you'd run.
 - `docs/system-design-primer.md`: the interview framework, building blocks, trade-offs, and DB selection.
 - `docs/scenario-format.md`: how scenarios are written (for Claude, or for you to write your own).
 - `CLAUDE.md`: instructions Claude follows in this repo.

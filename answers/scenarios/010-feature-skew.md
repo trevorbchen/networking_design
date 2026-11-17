@@ -45,6 +45,12 @@ global (model, thumbnails, CDN, serving infra) and points at per-user history fe
   not just latency/errors. These would have fired by ~19:30.
 - Treat feature-source changes like model deploys: canary to a % of users with automatic rollback on KPI/calibration regressions.
 
+## Real-world commands (how you'd confirm this in production)
+- Feature-store sample: `SELECT user_id, avg_watch_s FROM online_features ORDER BY updated_at DESC LIMIT 20` vs the same users in the offline table.
+- Drift dashboard (Evidently/Arize/WhyLabs): PSI per feature. Calibration plot (predicted vs observed CTR by bucket).
+- Diff the Flink job schema against the training feature spec. Look for a unit field (ms vs s).
+- `redis-cli --scan --pattern 'uf:*' | head | xargs -n1 redis-cli hget ... avg_watch_s` to see the bad values live.
+
 ## Grading rubric (10 pts)
 | pts | criterion |
 |----|-----------|

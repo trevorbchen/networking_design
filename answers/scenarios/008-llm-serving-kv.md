@@ -61,6 +61,12 @@ Why the dashboards looked fine:
   preemption rate > 0. These fire ~10 min before 504s would.
 - **Process**: Sales plan changes that raise limits should go through capacity review (tokens × context × duration).
 
+## Real-world commands (how you'd confirm this in production)
+- `curl :8000/metrics | grep vllm:` → `gpu_cache_usage_perc` ≈ 1.0, `num_requests_waiting` growing, `num_preemptions_total` rising,
+  `prompt_tokens_total` rate ↑ while request rate is flat.
+- Engine logs: `Sequence group ... preempted by PreemptionMode.RECOMPUTE`. Gateway access logs grouped by tenant and prompt length (Loki/ES query).
+- `benchmark_serving.py` with acme-like prompts (28k in / 600 out) on one replica shows the KV ceiling directly.
+
 ## Grading rubric (10 pts)
 | pts | criterion |
 |----|-----------|

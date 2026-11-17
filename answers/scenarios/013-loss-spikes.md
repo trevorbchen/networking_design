@@ -39,6 +39,12 @@ spike in **all nodes' local grad norms at once**, coincide with shard IDs 088xx,
   for logit stability.
 - Keep more frequent and longer-retained checkpoints so you can roll back to before damage.
 
+## Real-world commands (how you'd confirm this in production)
+- Re-run the exact batch: load checkpoint 62125, seek the dataloader to step 62497, run forward/backward on a different node and compare loss (deterministic data → reproduces).
+- Decode the offending sample: `tokenizer.decode(batch['input_ids'][i])` for the highest-loss sequences, or per-sequence loss sorted descending.
+- `zcat shard-08817.jsonl.gz | head -c 2000`, and quick stats (non-alpha ratio, max repeated substring) over the source.
+- W&B/TensorBoard: plot per-source loss and grad norm, then zoom to the spike steps.
+
 ## Grading rubric (10 pts)
 | pts | criterion |
 |----|-----------|

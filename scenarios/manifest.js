@@ -7,4 +7,5 @@ OBS.manifest = [
   '003-retry-storm.js',
   '004-cache-stampede.js',
   '005-stale-reads.js',
+  '006-hot-partition.js',
 ];

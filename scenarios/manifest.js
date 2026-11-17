@@ -9,4 +9,5 @@ OBS.manifest = [
   '005-stale-reads.js',
   '006-hot-partition.js',
   '007-training-slowdown.js',
+  '008-llm-serving-kv.js',
 ];

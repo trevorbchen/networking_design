@@ -480,7 +480,7 @@
         for (const [cnt, col] of parts) { if (!cnt) continue; const h = (cnt / max) * 32; y -= h; sv.append(OBS.svg('rect', { x: (i * W) / B, y, width: W / B - 0.5, height: h, fill: col })); }
       }
       const tot = o.e.reduce((a, b) => a + b, 0);
-      sv.append(OBS.svg('title')).textContent = svc + ': ' + tot + ' errors in window (peak bucket ' + max + ' lines)';
+      { const ti = OBS.svg('title'); ti.textContent = svc + ': ' + tot + ' errors in window (peak bucket ' + max + ' lines)'; sv.append(ti); }
       panel.append(el('div', { class: 'lane' }, el('div', { class: 'lane-label', title: svc }, 'logs · ' + svc), el('div', {}, sv)));
     }
     // trace scatter

@@ -6,4 +6,5 @@ OBS.manifest = [
   '002-search-gray-failure.js',
   '003-retry-storm.js',
   '004-cache-stampede.js',
+  '005-stale-reads.js',
 ];

@@ -50,6 +50,7 @@ Keyboard: `p` pins the value under the cursor, `z` zooms out, `Esc` closes dialo
 | 002-search-gray-failure | medium | slow search, all health checks green |
 | 003-retry-storm | hard | the DB came back, the site didn't |
 | 004-cache-stampede | medium | product pages error every five minutes |
+| 005-stale-reads | medium | saved settings keep reverting (DB replication) |
 
 ## Folder layout
 ```

@@ -3,4 +3,6 @@
 OBS.manifest = [
   '000-tutorial-oom.js',
   '001-checkout-pool.js',
+  '002-search-gray-failure.js',
+  '003-retry-storm.js',
 ];

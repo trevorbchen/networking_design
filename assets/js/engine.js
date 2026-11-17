@@ -185,6 +185,7 @@
         }
       }
     }
+    if (logs.length >= MAX_LOGS) errors.push('log cap (' + MAX_LOGS + ') reached: later log generators were truncated. Lower rates or set scenario.maxLogs');
     logs.sort((a, b) => a.t - b.t);
 
     // ---- traces

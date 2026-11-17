@@ -29,6 +29,7 @@ OBS.register((function () {
 | `startTime` | ISO UTC timestamp of t=0. |
 | `duration`, `step` | Window length and metric resolution in seconds (default 3600 / 10). Keep `duration/step` ≤ ~800. |
 | `seed` | RNG seed. The same seed always gives the same data. |
+| `heatmapDefault` | optional metric name the Heatmap opens on. The default is the metric with the most instances, which can give the answer away. |
 | `maxLogs`, `maxTraces` | Caps (default 25000 / 4000). The validator warns when the log cap truncates. |
 
 ## `brief`
@@ -66,6 +67,8 @@ Every authoring function receives `(t, h, i)`. `t` is seconds since start, `i` i
   and the heatmap.
 - `instances`: a number (1..n) or an array of names. `{i}` in `entity` is replaced.
 - Values are clamped at `min` (default 0). Use `min: -Infinity` for signed metrics.
+- `zero: false`: don't anchor the chart's y-axis at 0 (for counters like a global step, where the interesting change is small relative to the value).
+- Metric functions must return finite numbers (the validator flags NaN/Infinity). For "no data", return 0 and say so in `desc`.
 - Units with special formatting: `%`, `ms`, `s`, `B`, `B/s`, `ratio`, `''`. Anything else prints as `<num> <unit>`.
 
 ## `topology`

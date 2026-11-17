@@ -129,11 +129,11 @@ model **and feature-source** change.
 |---|---|---|
 | degraded IB link / NIC | tokens/s step down, exposed comm up | per-node IB link rate / symbol errors; NIC kernel logs (007) |
 | straggler GPU (thermal/power/ECC) | erratic or periodic step time | one node's compute time & clocks; it alone doesn't wait (009) |
-| dataloader-bound | GPU util sawtooth, dataloader wait up | host CPU 100%, profiler gaps before forward |
-| checkpoint stall | periodic long steps / NCCL timeouts | ckpt write time vs shared FS throughput |
-| NCCL hang | step counter stops, GPUs at 100% "util" | NCCL watchdog/flight recorder shows the rank that never joined |
-| loss spike / divergence | loss and grad norm jump | data shard IDs at spike, LR schedule, fp16 overflow / loss scale |
-| MoE expert imbalance | step time up, one EP rank hot | per-expert token counts, all-to-all imbalance |
+| dataloader-bound | GPU util down, dataloader wait up | host CPU 100%, prefetch queue empty, profiler gap before forward (011) |
+| checkpoint stall | hang at checkpoint time → NCCL timeout | rank 0 still writing; shared-FS contention; ckpt write bw (012) |
+| NCCL hang | step counter stops, GPUs at 100% "util" but idle power | watchdog / flight recorder shows the rank that never joined (012) |
+| loss spike / divergence | loss and grad norm jump | per-source loss, shard IDs at spike, replay reproduces → data, not SDC (013) |
+| MoE expert imbalance | step time ramps, all-to-all "slow" | per-expert token share, router entropy/aux loss, hot EP ranks (014) |
 | KV-cache exhaustion | TTFT up, req/s flat | kv_cache_usage ~100%, waiting queue, preemptions, tokens/s up (008) |
 | prefill interference | TPOT p99 spikes | long prompts arriving, no chunked prefill |
 | training-serving skew | business KPI down, infra green | calibration, per-feature PSI, segment split (010) |

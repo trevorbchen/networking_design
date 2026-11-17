@@ -472,7 +472,8 @@
     const names = {}, instCount = {};
     for (const m of Object.values(S.c.meta)) { (names[m.name] = names[m.name] || []).push(m.key); if (m.instance) instCount[m.name] = (instCount[m.name] || 0) + 1; }
     const opts = Object.keys(names).sort((a, b) => (instCount[b] || 0) - (instCount[a] || 0) || names[b].length - names[a].length || a.localeCompare(b));
-    S.st.heat = S.st.heat && names[S.st.heat] ? S.st.heat : opts[0];
+    const hd = S.c.scenario.heatmapDefault;
+    S.st.heat = S.st.heat && names[S.st.heat] ? S.st.heat : hd && names[hd] ? hd : opts[0];
     const aggCb = el('input', { type: 'checkbox', onchange: () => draw() });
     const sel = el('select', { onchange: () => { S.st.heat = sel.value; save(); draw(); } }, opts.map((o) => el('option', { value: o }, o + ' (' + names[o].length + ')')));
     sel.value = S.st.heat;

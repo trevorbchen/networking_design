@@ -12,4 +12,8 @@ OBS.manifest = [
   '008-llm-serving-kv.js',
   '009-gpu-straggler.js',
   '010-feature-skew.js',
+  '011-dataloader-bound.js',
+  '012-checkpoint-hang.js',
+  '013-loss-spikes.js',
+  '014-moe-imbalance.js',
 ];

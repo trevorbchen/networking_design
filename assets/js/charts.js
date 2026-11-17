@@ -101,6 +101,7 @@
   function tickNum(v, stepv) {
     if (Math.abs(v) < 1e-12) return '0';
     if (Math.abs(v) >= 1e4) return fmt.num(v);
+    if (Math.abs(v) < 1e-3) return v.toExponential(Math.max(0, Math.min(2, -Math.floor(Math.log10(stepv || 1)) + Math.floor(Math.log10(Math.abs(v))))));
     const d = Math.max(0, Math.min(4, -Math.floor(Math.log10(stepv || 1))));
     return String(+v.toFixed(d));
   }
@@ -208,7 +209,8 @@
         ylo = Math.pow(10, Math.floor(Math.log10(ylo))); yhi = Math.pow(10, Math.ceil(Math.log10(yhi)));
         ticks = []; for (let v = ylo; v <= yhi * 1.0001; v *= 10) ticks.push(v);
       } else {
-        ylo = lo >= 0 ? 0 : lo; yhi = hi + (hi - ylo) * 0.08 || 1;
+        const noZero = keys.length && keys.every((k) => c.meta[k] && c.meta[k].zero === false) && lo > 0;
+        ylo = noZero ? lo - (hi - lo) * 0.1 : lo >= 0 ? 0 : lo; yhi = hi + (hi - ylo) * 0.08 || 1;
         const au0 = axisUnit(this.unit, yhi);
         ticks = niceTicks(ylo / au0.scale, yhi / au0.scale, 4).map((v) => v * au0.scale); yhi = Math.max(yhi, ticks[ticks.length - 1]);
       }

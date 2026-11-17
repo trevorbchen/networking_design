@@ -154,7 +154,7 @@
         series[key] = vals;
         const parts = entity.split('/');
         meta[key] = {
-          key, entity, name: m.name, unit: m.unit || '', desc: m.desc || '',
+          key, entity, name: m.name, unit: m.unit || '', desc: m.desc || '', zero: m.zero !== false,
           service: parts[0], instance: parts.length > 1 ? parts.slice(1).join('/') : null,
         };
       }

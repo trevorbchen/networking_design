@@ -61,6 +61,10 @@ Keyboard: `p` pins the value under the cursor, `z` zooms out, `Esc` closes dialo
 | 008-llm-serving-kv | hard | **ML** · chatbot slow and timing out, traffic normal (LLM serving) |
 | 009-gpu-straggler | hard | **ML** · training step time keeps jumping (256 GPUs) |
 | 010-feature-skew | hard | **ML** · recommendation CTR down 30%, nothing broken |
+| 011-dataloader-bound | medium | **ML** · new dataset made training 35% slower |
+| 012-checkpoint-hang | hard | **ML** · run keeps crashing with NCCL timeouts, no progress |
+| 013-loss-spikes | medium | **ML** · loss keeps spiking, then NaN |
+| 014-moe-imbalance | hard | **ML** · MoE run gets slower every hour |
 
 Design questions: 01 url-shortener · 02 rate-limiter · 03 news-feed · 04 kv-store · 05 ticketing · 06 metrics-pipeline ·
 **07 llm-inference-platform · 08 training-platform · 09 realtime-recsys** (ML).

@@ -8,4 +8,5 @@ OBS.manifest = [
   '004-cache-stampede.js',
   '005-stale-reads.js',
   '006-hot-partition.js',
+  '007-training-slowdown.js',
 ];
